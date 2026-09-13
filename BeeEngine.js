@@ -110,7 +110,7 @@ export class BeeEngine {
         if (this.touchControls && typeof this.touchControls.destroy === 'function') {
             this.touchControls.destroy();
         }
-        this.touchControls = new BeeJoystick(this.canvas, this.input);
+        this.touchControls = new BeeJoystick(this.canvas, this.input, options);
         return this.touchControls;
     }
 

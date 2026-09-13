@@ -941,19 +941,48 @@ export declare class BeeMenuScene implements BeeScene {
 
 export declare class BeeJoystick {
   canvas: HTMLCanvasElement;
-  x: number;
-  y: number;
+  input: BeeInput | null;
+  margin: number;
   radius: number;
-  handleRadius: number;
+  knobRadius: number;
+  deadZone: number;
+  jumpEnabled: boolean;
+  jumpRadius: number;
+  jumpLabel: string;
+  jumpKey: string;
+  baseX: number;
+  baseY: number;
+  stickX: number;
+  stickY: number;
+  jumpX: number;
+  jumpY: number;
+  axisX: number;
+  axisY: number;
+  readonly x: number;
+  readonly y: number;
+  readonly vector: { x: number; y: number };
   active: boolean;
-  angle: number;
-  distance: number;
+  jumpPressed: boolean;
 
-  constructor(canvas: HTMLCanvasElement, input: BeeInput);
+  constructor(
+    canvas: HTMLCanvasElement,
+    input?: BeeInput | null,
+    options?: {
+      margin?: number;
+      radius?: number;
+      knobRadius?: number;
+      deadZone?: number;
+      jump?: boolean;
+      jumpRadius?: number;
+      jumpLabel?: string;
+      jumpKey?: string;
+    }
+  );
 
-  update(): void;
-  draw(ctx: CanvasRenderingContext2D): void;
   getDir(): { x: number; y: number };
+  updateLayout(): void;
+  draw(ctx: CanvasRenderingContext2D): void;
+  destroy(): void;
 }
 
 export declare class BeeSpriteSheet {
@@ -1152,7 +1181,16 @@ export declare class BeeEngine {
   stop(): void;
   destroy(): void;
 
-  enableJoystick(options?: object): BeeJoystick;
+  enableJoystick(options?: {
+    margin?: number;
+    radius?: number;
+    knobRadius?: number;
+    deadZone?: number;
+    jump?: boolean;
+    jumpRadius?: number;
+    jumpLabel?: string;
+    jumpKey?: string;
+  }): BeeJoystick;
   enableTouchControls(): BeeTouchControls;
   enableLadybug(options?: BeeLadybugOptions): BeeLadybug;
 

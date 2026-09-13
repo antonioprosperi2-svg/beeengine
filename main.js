@@ -26,9 +26,22 @@ const SPRINT_MUL = 1.5;
 const JUMP_TIME = 0.45;
 const JUMP_HEIGHT = 56;
 
+/** true = mostra joystick e salto anche su desktop (test col mouse). */
+const FORCE_TOUCH_UI = true;
+
 const engine = new BeeEngine('gameCanvas', VIEW_W, VIEW_H);
 engine.enableAutoResize(VIEW_W, VIEW_H);
 engine.enableLadybug();
+
+function isTouchDevice() {
+    if (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) return true;
+    if (typeof window === 'undefined') return false;
+    return 'ontouchstart' in window || window.matchMedia('(pointer: coarse)').matches;
+}
+
+if (FORCE_TOUCH_UI || isTouchDevice()) {
+    engine.enableJoystick({ jump: true });
+}
 
 function buildManifest() {
     const items = [];
@@ -150,7 +163,13 @@ function attachTopDownControls(player) {
             }
         }
 
-        return baseUpdate(dt, input, game);
+        baseUpdate(dt, input, game);
+
+        const pad = game.touchControls;
+        if (pad && (pad.axisX || pad.axisY)) {
+            this.vx = pad.axisX * this.speed;
+            this.vy = pad.axisY * this.speed;
+        }
     };
 
     const baseDraw = player.draw.bind(player);
@@ -336,9 +355,9 @@ async function boot() {
             ctx.save();
             ctx.font = '14px sans-serif';
             ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-            ctx.fillRect(player.worldX - 52, player.worldY - 32, 230, 22);
+            ctx.fillRect(player.worldX - 52, player.worldY - 32, 248, 22);
             ctx.fillStyle = '#fff';
-            ctx.fillText('WASD  Shift corsa  Space salto  F2', player.worldX - 44, player.worldY - 16);
+            ctx.fillText('WASD / stick  Shift  Space/SALTA  F2', player.worldX - 44, player.worldY - 16);
             ctx.restore();
         }
     );

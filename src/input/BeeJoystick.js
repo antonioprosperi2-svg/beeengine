@@ -1,130 +1,163 @@
+/**
+ * BeeJoystick — HUD analogico su canvas (base + pomello) e pulsante salto.
+ * Touch e mouse via Pointer Events. Asse normalizzato -1..1.
+ */
 export class BeeJoystick {
-    constructor(canvas, input) {
+    /**
+     * @param {HTMLCanvasElement} canvas
+     * @param {object} [input]
+     * @param {object} [options]
+     */
+    constructor(canvas, input, options = {}) {
         this.canvas = canvas;
-        this.input = input;
+        this.input = input || null;
 
-        // Configurazione Joystick Virtuale
-        this.margin = 35;
-        this.radius = 45;
-        this.knobRadius = 18;
-        this.deadZone = 10;
+        this.margin = options.margin ?? 36;
+        this.radius = options.radius ?? 52;
+        this.knobRadius = options.knobRadius ?? 20;
+        this.deadZone = options.deadZone ?? 0.16;
+        this.jumpEnabled = options.jump !== false;
+        this.jumpRadius = options.jumpRadius ?? 38;
+        this.jumpLabel = options.jumpLabel ?? 'SALTA';
+        this.jumpKey = options.jumpKey ?? 'Space';
 
         this.baseX = 0;
         this.baseY = 0;
         this.stickX = 0;
         this.stickY = 0;
+        this.jumpX = 0;
+        this.jumpY = 0;
 
+        this.axisX = 0;
+        this.axisY = 0;
         this.active = false;
-        this.touchId = null;
+        this.pointerId = null;
+
+        this.jumpPressed = false;
+        this.jumpPointerId = null;
 
         this.updateLayout();
-
         this.bindEvents();
     }
 
+    get x() {
+        return this.axisX;
+    }
+
+    get y() {
+        return this.axisY;
+    }
+
+    getDir() {
+        return { x: this.axisX, y: this.axisY };
+    }
+
+    get vector() {
+        return { x: this.axisX, y: this.axisY };
+    }
+
     bindEvents() {
-        this.onTouchStart = (e) => this.handleTouchStart(e);
-        this.onTouchMove = (e) => this.handleTouchMove(e);
-        this.onTouchEnd = (e) => this.handleTouchEnd(e);
+        this.onPointerDown = (e) => this.handlePointerDown(e);
+        this.onPointerMove = (e) => this.handlePointerMove(e);
+        this.onPointerUp = (e) => this.handlePointerUp(e);
         this.onResize = () => this.updateLayout();
 
-        this.canvas.addEventListener('touchstart', this.onTouchStart, { passive: false });
-        this.canvas.addEventListener('touchmove', this.onTouchMove, { passive: false });
-        this.canvas.addEventListener('touchend', this.onTouchEnd, { passive: false });
-        this.canvas.addEventListener('touchcancel', this.onTouchEnd, { passive: false });
-
+        this.canvas.addEventListener('pointerdown', this.onPointerDown);
+        this.canvas.addEventListener('pointermove', this.onPointerMove);
+        this.canvas.addEventListener('pointerup', this.onPointerUp);
+        this.canvas.addEventListener('pointercancel', this.onPointerUp);
+        window.addEventListener('pointerup', this.onPointerUp);
+        window.addEventListener('pointercancel', this.onPointerUp);
         window.addEventListener('resize', this.onResize);
     }
 
     updateLayout() {
-        const rect = this.canvas.getBoundingClientRect();
+        const w = this.canvas.width || 800;
+        const h = this.canvas.height || 600;
 
-        const canvasWidth = this.canvas.width || rect.width;
-        const canvasHeight = this.canvas.height || rect.height;
-
-        // Joystick fisso in basso a sinistra
         this.baseX = this.margin + this.radius;
-        this.baseY = canvasHeight - this.margin - this.radius;
+        this.baseY = h - this.margin - this.radius;
+        this.jumpX = w - this.margin - this.jumpRadius;
+        this.jumpY = h - this.margin - this.jumpRadius;
 
-        // Se non è attivo, il pomello rimane al centro della base
         if (!this.active) {
             this.stickX = this.baseX;
             this.stickY = this.baseY;
         }
     }
 
-    getCanvasCoords(touch) {
+    getCanvasCoords(event) {
         const rect = this.canvas.getBoundingClientRect();
-
         const rectWidth = rect.width || 1;
         const rectHeight = rect.height || 1;
-
         const canvasWidth = this.canvas.width || rectWidth;
         const canvasHeight = this.canvas.height || rectHeight;
 
-        const scaleX = canvasWidth / rectWidth;
-        const scaleY = canvasHeight / rectHeight;
-
         return {
-            x: (touch.clientX - rect.left) * scaleX,
-            y: (touch.clientY - rect.top) * scaleY
+            x: (event.clientX - rect.left) * (canvasWidth / rectWidth),
+            y: (event.clientY - rect.top) * (canvasHeight / rectHeight)
         };
     }
 
-    isInsideJoystick(x, y) {
-        const dx = x - this.baseX;
-        const dy = y - this.baseY;
-        const distance = Math.hypot(dx, dy);
-
-        // Leggermente più grande del raggio per facilitare il tocco su mobile
-        return distance <= this.radius + 20;
+    isInsideCircle(px, py, cx, cy, radius) {
+        const dx = px - cx;
+        const dy = py - cy;
+        return dx * dx + dy * dy <= radius * radius;
     }
 
-    handleTouchStart(e) {
-        if (e.cancelable) e.preventDefault();
+    handlePointerDown(e) {
+        const { x, y } = this.getCanvasCoords(e);
 
-        this.updateLayout();
+        if (this.jumpEnabled && this.jumpPointerId == null
+            && this.isInsideCircle(x, y, this.jumpX, this.jumpY, this.jumpRadius + 8)) {
+            if (e.cancelable) e.preventDefault();
+            this.jumpPointerId = e.pointerId;
+            this.setJump(true);
+            this.#capture(e);
+            return;
+        }
 
-        // Se il joystick è già controllato da un dito, ignora gli altri tocchi
         if (this.active) return;
 
-        for (const touch of e.changedTouches) {
-            const { x, y } = this.getCanvasCoords(touch);
-
-            if (this.isInsideJoystick(x, y)) {
-                this.active = true;
-                this.touchId = touch.identifier;
-
-                this.updateStickPosition(x, y);
-                break;
-            }
+        if (this.isInsideCircle(x, y, this.baseX, this.baseY, this.radius + 24)) {
+            if (e.cancelable) e.preventDefault();
+            this.active = true;
+            this.pointerId = e.pointerId;
+            this.updateStickPosition(x, y);
+            this.#capture(e);
         }
     }
 
-    handleTouchMove(e) {
-        if (e.cancelable) e.preventDefault();
-
-        if (!this.active) return;
-
-        for (const touch of e.changedTouches) {
-            if (touch.identifier === this.touchId) {
-                const { x, y } = this.getCanvasCoords(touch);
-                this.updateStickPosition(x, y);
-                break;
-            }
+    handlePointerMove(e) {
+        if (this.active && e.pointerId === this.pointerId) {
+            if (e.cancelable) e.preventDefault();
+            const { x, y } = this.getCanvasCoords(e);
+            this.updateStickPosition(x, y);
         }
     }
 
-    handleTouchEnd(e) {
-        if (e.cancelable) e.preventDefault();
+    handlePointerUp(e) {
+        if (this.jumpEnabled && e.pointerId === this.jumpPointerId) {
+            this.jumpPointerId = null;
+            this.setJump(false);
+            this.#release(e);
+        }
 
-        if (!this.active) return;
+        if (this.active && e.pointerId === this.pointerId) {
+            this.resetStick();
+            this.#release(e);
+        }
+    }
 
-        for (const touch of e.changedTouches) {
-            if (touch.identifier === this.touchId) {
-                this.resetJoystick();
-                break;
-            }
+    #capture(e) {
+        if (this.canvas.setPointerCapture) {
+            try { this.canvas.setPointerCapture(e.pointerId); } catch (_err) { /* ignore */ }
+        }
+    }
+
+    #release(e) {
+        if (this.canvas.releasePointerCapture) {
+            try { this.canvas.releasePointerCapture(e.pointerId); } catch (_err) { /* ignore */ }
         }
     }
 
@@ -136,92 +169,133 @@ export class BeeJoystick {
         let clampedX = dx;
         let clampedY = dy;
 
-        // Limita il pomello dentro il raggio massimo
-        if (distance > this.radius) {
-            const angle = Math.atan2(dy, dx);
-
-            clampedX = Math.cos(angle) * this.radius;
-            clampedY = Math.sin(angle) * this.radius;
+        if (distance > this.radius && distance > 0) {
+            const scale = this.radius / distance;
+            clampedX = dx * scale;
+            clampedY = dy * scale;
         }
 
         this.stickX = this.baseX + clampedX;
         this.stickY = this.baseY + clampedY;
-
-        this.updateInput(clampedX, clampedY);
+        this.updateAxis(clampedX, clampedY);
     }
 
-    updateInput(dx, dy) {
-        if (!this.input || !this.input.setKey) return;
+    updateAxis(dx, dy) {
+        let nx = this.radius > 0 ? dx / this.radius : 0;
+        let ny = this.radius > 0 ? dy / this.radius : 0;
+        const mag = Math.hypot(nx, ny);
 
-        this.input.setKey('ArrowLeft', dx < -this.deadZone);
-        this.input.setKey('ArrowRight', dx > this.deadZone);
-        this.input.setKey('ArrowUp', dy < -this.deadZone);
-        this.input.setKey('ArrowDown', dy > this.deadZone);
+        if (mag < this.deadZone) {
+            nx = 0;
+            ny = 0;
+        } else if (mag > 1) {
+            nx /= mag;
+            ny /= mag;
+        }
+
+        this.axisX = nx;
+        this.axisY = ny;
+        this.syncKeys();
     }
 
-    resetJoystick() {
+    syncKeys() {
+        if (!this.input || typeof this.input.setKey !== 'function') return;
+
+        this.input.setKey('ArrowLeft', this.axisX < -this.deadZone);
+        this.input.setKey('ArrowRight', this.axisX > this.deadZone);
+        this.input.setKey('ArrowUp', this.axisY < -this.deadZone);
+        this.input.setKey('ArrowDown', this.axisY > this.deadZone);
+        this.input.setKey('KeyA', this.axisX < -this.deadZone);
+        this.input.setKey('KeyD', this.axisX > this.deadZone);
+        this.input.setKey('KeyW', this.axisY < -this.deadZone);
+        this.input.setKey('KeyS', this.axisY > this.deadZone);
+    }
+
+    setJump(pressed) {
+        const was = this.jumpPressed;
+        this.jumpPressed = pressed === true;
+        if (!this.input || typeof this.input.setKey !== 'function') return;
+        if (this.jumpPressed && !was) {
+            this.input.setKey(this.jumpKey, true);
+        } else if (!this.jumpPressed && was) {
+            this.input.setKey(this.jumpKey, false);
+        }
+    }
+
+    resetStick() {
         this.active = false;
-        this.touchId = null;
-
+        this.pointerId = null;
         this.stickX = this.baseX;
         this.stickY = this.baseY;
-
-        this.releaseKeys();
-    }
-
-    releaseKeys() {
-        if (!this.input || !this.input.setKey) return;
-
-        this.input.setKey('ArrowLeft', false);
-        this.input.setKey('ArrowRight', false);
-        this.input.setKey('ArrowUp', false);
-        this.input.setKey('ArrowDown', false);
+        this.axisX = 0;
+        this.axisY = 0;
+        this.syncKeys();
     }
 
     draw(ctx) {
         this.updateLayout();
-
         ctx.save();
 
-        // Base joystick, visibile sempre
-        ctx.globalAlpha = this.active ? 0.35 : 0.22;
+        ctx.globalAlpha = this.active ? 0.38 : 0.22;
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.arc(this.baseX, this.baseY, this.radius, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.globalAlpha = this.active ? 0.8 : 0.45;
+        ctx.globalAlpha = this.active ? 0.85 : 0.5;
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(this.baseX, this.baseY, this.radius, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Pomello giallo, visibile anche a riposo
-        ctx.globalAlpha = this.active ? 0.9 : 0.55;
+        ctx.globalAlpha = this.active ? 0.95 : 0.6;
         ctx.fillStyle = '#ffcc00';
         ctx.beginPath();
         ctx.arc(this.stickX, this.stickY, this.knobRadius, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.globalAlpha = this.active ? 1 : 0.7;
+        ctx.globalAlpha = 1;
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(this.stickX, this.stickY, this.knobRadius, 0, Math.PI * 2);
         ctx.stroke();
 
+        if (this.jumpEnabled) {
+            ctx.globalAlpha = this.jumpPressed ? 0.85 : 0.35;
+            ctx.fillStyle = this.jumpPressed ? '#ffffff' : '#111111';
+            ctx.beginPath();
+            ctx.arc(this.jumpX, this.jumpY, this.jumpRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.globalAlpha = 0.9;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(this.jumpX, this.jumpY, this.jumpRadius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.fillStyle = this.jumpPressed ? '#111111' : '#ffffff';
+            ctx.font = `bold ${Math.round(this.jumpRadius * 0.42)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(this.jumpLabel, this.jumpX, this.jumpY);
+        }
+
         ctx.restore();
     }
 
     destroy() {
-        this.canvas.removeEventListener('touchstart', this.onTouchStart);
-        this.canvas.removeEventListener('touchmove', this.onTouchMove);
-        this.canvas.removeEventListener('touchend', this.onTouchEnd);
-        this.canvas.removeEventListener('touchcancel', this.onTouchEnd);
-
+        this.canvas.removeEventListener('pointerdown', this.onPointerDown);
+        this.canvas.removeEventListener('pointermove', this.onPointerMove);
+        this.canvas.removeEventListener('pointerup', this.onPointerUp);
+        this.canvas.removeEventListener('pointercancel', this.onPointerUp);
+        window.removeEventListener('pointerup', this.onPointerUp);
+        window.removeEventListener('pointercancel', this.onPointerUp);
         window.removeEventListener('resize', this.onResize);
 
-        this.releaseKeys();
+        this.resetStick();
+        this.setJump(false);
     }
 }
