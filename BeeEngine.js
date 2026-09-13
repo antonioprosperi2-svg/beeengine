@@ -39,6 +39,18 @@ import { BeeText } from './src/graphics/BeeText.js';
 import { BeeCollisionSystem } from './src/physics/BeeCollisionSystem.js';
 import { BeeRectCollider } from './src/physics/BeeRectCollider.js';
 import { BeeBullet } from './src/physics/BeeBullet.js';
+import { BeeSpatialHash, BEE_SPATIAL_HASH_DEFAULTS } from './src/physics/BeeSpatialHash.js';
+import {
+    BeePhysicsWorld,
+    BEE_PHYSICS_DEFAULTS
+} from './src/physics/BeePhysicsWorld.js';
+import {
+    BeeRigidBody,
+    BEE_BODY_TYPE,
+    BEE_SHAPE,
+    BEE_LAYER,
+    BEE_BODY_DEFAULTS
+} from './src/physics/BeeRigidBody.js';
 
 // ==========================================
 // 5. GAMEPLAY & ENTITIES (src/gameplay/)
@@ -69,6 +81,7 @@ export class BeeEngine {
 
         this.entities = [];
         this.collisions = new BeeCollisionSystem(this);
+        this.physics = new BeePhysicsWorld({ gravityX: 0, gravityY: 0 });
         this.time = new BeeTime();
         this.debug = new BeeLadybug(this);
         this.debug.attach();
@@ -207,6 +220,9 @@ export class BeeEngine {
         this.stop();
         this.entities = [];
         this.events = {};
+        if (this.physics && typeof this.physics.clear === 'function') {
+            this.physics.clear();
+        }
 
         if (this._startAudioHandler) {
             window.removeEventListener('click', this._startAudioHandler);
@@ -254,6 +270,7 @@ export class BeeEngine {
             }
 
             this.updateEntities(dt, this.input);
+            this.stepPhysics(dt);
         }
 
         if (this.update) {
@@ -313,6 +330,22 @@ export class BeeEngine {
     }
 
     addEntity(entity) { this.entities.push(entity); }
+
+    stepPhysics(dt) {
+        if (!this.physics || !(dt > 0)) return this;
+
+        const bodies = this.physics.bodies;
+        for (let i = 0; i < bodies.length; i++) {
+            const body = bodies[i];
+            const entity = body.entity;
+            if (!entity || body.type !== BEE_BODY_TYPE.DYNAMIC) continue;
+            body.vx = entity.vx;
+            body.vy = entity.vy;
+        }
+
+        this.physics.step(dt);
+        return this;
+    }
 
     updateEntities(dt, input) {
         let hasDestroyed = false;
@@ -446,6 +479,12 @@ export {
     BEE_TRANSFORM_DEFAULTS,
     BEE_TIME_DEFAULTS,
     BEE_LADYBUG_DEFAULTS,
+    BEE_SPATIAL_HASH_DEFAULTS,
+    BEE_PHYSICS_DEFAULTS,
+    BEE_BODY_TYPE,
+    BEE_SHAPE,
+    BEE_LAYER,
+    BEE_BODY_DEFAULTS,
     BeeTime,
     BeeTransform,
     BeeLadybug,
@@ -473,6 +512,9 @@ export {
     BeePlatform,
     BeeCollectible,
     BeeCollisionSystem,
+    BeeSpatialHash,
+    BeePhysicsWorld,
+    BeeRigidBody,
     BeeSpriteSheet,
     BeeAnimatedSprite,
     BeeTilemapLoader,

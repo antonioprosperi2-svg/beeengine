@@ -209,6 +209,7 @@ export declare class BeeEntity {
   visible: boolean;
   destroyed: boolean;
   collider: BeeRectCollider | null;
+  body: BeeRigidBody | null;
   readonly children: BeeEntity[];
 
   constructor(
@@ -360,6 +361,180 @@ export declare class BeeCollisionSystem {
   solid(moversGroup: string, solidsGroup: string): this;
   overlap(groupA: string, groupB: string, callback: BeeOverlapCallback): this;
   run(): void;
+}
+
+// ---------------------------------------------------------------------------
+// Physics (BeeSpatialHash, BeeRigidBody, BeePhysicsWorld)
+// ---------------------------------------------------------------------------
+
+export declare const BEE_SPATIAL_HASH_DEFAULTS: Readonly<{
+  cellSize: number;
+}>;
+
+export declare class BeeSpatialHash {
+  cellSize: number;
+  itemCount: number;
+  insertCount: number;
+  readonly cellCount: number;
+
+  constructor(options?: { cellSize?: number });
+  configure(options?: { cellSize?: number }): this;
+  clear(): this;
+  insert(item: object, box?: BeeRect | null): this;
+  query(aabb: BeeRect, out?: object[]): object[];
+  queryPoint(x: number, y: number, out?: object[]): object[];
+  queryRadius(x: number, y: number, radius: number, out?: object[]): object[];
+  forEachPair(callback: (a: object, b: object) => void): number;
+}
+
+export type BeeBodyType = "static" | "kinematic" | "dynamic";
+export type BeeShapeType = "box" | "circle" | "capsule";
+
+export declare const BEE_BODY_TYPE: Readonly<{
+  STATIC: "static";
+  KINEMATIC: "kinematic";
+  DYNAMIC: "dynamic";
+}>;
+
+export declare const BEE_SHAPE: Readonly<{
+  BOX: "box";
+  CIRCLE: "circle";
+  CAPSULE: "capsule";
+}>;
+
+export declare const BEE_LAYER: Readonly<{
+  DEFAULT: number;
+  PLAYER: number;
+  WORLD: number;
+  TRIGGER: number;
+  PROJECTILE: number;
+  GHOST: number;
+  ALL: number;
+}>;
+
+export declare const BEE_BODY_DEFAULTS: Readonly<{
+  type: BeeBodyType;
+  mass: number;
+  restitution: number;
+  friction: number;
+  gravityScale: number;
+  linearDamping: number;
+  angularDamping: number;
+  layer: number;
+  mask: number;
+  isTrigger: boolean;
+  fixedRotation: boolean;
+}>;
+
+export interface BeeShape {
+  type: BeeShapeType;
+  width?: number;
+  height?: number;
+  radius?: number;
+  length?: number;
+}
+
+export interface BeeRigidBodyOptions {
+  entity?: BeeEntity | null;
+  transform?: BeeTransform;
+  shape?: BeeShape;
+  type?: BeeBodyType;
+  mass?: number;
+  restitution?: number;
+  friction?: number;
+  gravityScale?: number;
+  linearDamping?: number;
+  angularDamping?: number;
+  layer?: number;
+  mask?: number;
+  isTrigger?: boolean;
+  fixedRotation?: boolean;
+  vx?: number;
+  vy?: number;
+  omega?: number;
+}
+
+export declare class BeeRigidBody {
+  id: number;
+  entity: BeeEntity | null;
+  transform: BeeTransform;
+  shape: BeeShape;
+  restitution: number;
+  friction: number;
+  gravityScale: number;
+  linearDamping: number;
+  angularDamping: number;
+  layer: number;
+  mask: number;
+  isTrigger: boolean;
+  fixedRotation: boolean;
+  enabled: boolean;
+  isGrounded: boolean;
+  vx: number;
+  vy: number;
+  omega: number;
+  world: BeePhysicsWorld | null;
+  invMass: number;
+  invInertia: number;
+  type: BeeBodyType;
+  mass: number;
+  readonly pose: { x: number; y: number; rotation: number };
+  readonly aabb: BeeRect;
+  tipo?: string;
+
+  static box(width: number, height: number): BeeShape;
+  static circle(radius: number): BeeShape;
+  static capsule(radius: number, length: number): BeeShape;
+
+  constructor(options?: BeeRigidBodyOptions);
+  collidesWith(other: BeeRigidBody): boolean;
+  applyForce(fx: number, fy: number): this;
+  applyTorque(torque: number): this;
+  applyImpulse(ix: number, iy: number): this;
+  applyImpulseAt(ix: number, iy: number, worldX: number, worldY: number): this;
+  clearForces(): void;
+  readPose(): { x: number; y: number; rotation: number };
+  writePose(): this;
+  integrateForces(dt: number, gravityX: number, gravityY: number): void;
+  integrateVelocity(dt: number): void;
+  computeAABB(): BeeRect;
+  getWorldAABB(): BeeRect;
+  drawDebug(ctx: CanvasRenderingContext2D, color?: string): this;
+  destroy(): void;
+}
+
+export declare const BEE_PHYSICS_DEFAULTS: Readonly<{
+  gravityX: number;
+  gravityY: number;
+  iterations: number;
+  slop: number;
+  baumgarte: number;
+  maxVelocity: number;
+  cellSize: number;
+}>;
+
+export declare class BeePhysicsWorld {
+  gravityX: number;
+  gravityY: number;
+  iterations: number;
+  slop: number;
+  baumgarte: number;
+  maxVelocity: number;
+  hash: BeeSpatialHash;
+  onBeginOverlap: ((a: BeeRigidBody, b: BeeRigidBody) => void) | null;
+  onEndOverlap: ((a: BeeRigidBody, b: BeeRigidBody) => void) | null;
+  readonly bodies: BeeRigidBody[];
+  readonly contactCount: number;
+
+  constructor(options?: Partial<typeof BEE_PHYSICS_DEFAULTS> & { hash?: BeeSpatialHash });
+  add(body: BeeRigidBody): BeeRigidBody | null;
+  remove(body: BeeRigidBody): this;
+  clear(): this;
+  createBody(options?: BeeRigidBodyOptions): BeeRigidBody;
+  query(aabb: BeeRect, out?: object[]): object[];
+  queryPoint(x: number, y: number, out?: object[]): object[];
+  queryRadius(x: number, y: number, radius: number, out?: object[]): object[];
+  step(dt: number): this;
 }
 
 // ---------------------------------------------------------------------------
@@ -945,6 +1120,7 @@ export declare class BeeEngine {
   scenes: BeeSceneManager;
   entities: BeeEntity[];
   collisions: BeeCollisionSystem;
+  physics: BeePhysicsWorld;
   time: BeeTime;
   debug: BeeLadybug;
   lastTime: number;
@@ -1004,6 +1180,7 @@ export declare class BeeEngine {
   off(evento: string, callback: BeeEventCallback): void;
 
   addEntity(entity: BeeEntity): void;
+  stepPhysics(dt: number): this;
   updateEntities(dt: number, input: BeeInput): void;
   renderEntities(ctx: CanvasRenderingContext2D): void;
   getEntityDrawBounds(entity: BeeEntity): BeeRect | null;

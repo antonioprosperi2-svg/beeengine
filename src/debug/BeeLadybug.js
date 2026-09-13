@@ -179,11 +179,18 @@ export class BeeLadybug {
     }
 
     #aabbOf(entity) {
+        if (!entity) return null;
+
+        if (entity.body && entity.body.aabb && entity.body.aabb.width > 0) {
+            return entity.body.aabb;
+        }
+
+        if (!entity.body && !entity.collider) return null;
+
         const engine = this.engine;
         if (engine && typeof engine.getEntityDrawBounds === 'function') {
             return engine.getEntityDrawBounds(entity);
         }
-        if (!entity) return null;
         return {
             x: typeof entity.worldX === 'number' ? entity.worldX : entity.x,
             y: typeof entity.worldY === 'number' ? entity.worldY : entity.y,
@@ -252,23 +259,27 @@ export class BeeLadybug {
             ctx.fillStyle = colliding ? 'rgba(255, 59, 59, 0.16)' : 'rgba(61, 255, 106, 0.08)';
             ctx.fillRect(box.x, box.y, box.width, box.height);
 
-            const xf = entity.transform;
-            if (xf && typeof xf.transformPoint === 'function') {
-                const w = entity.width || box.width;
-                const h = entity.height || box.height;
-                const p0 = xf.transformPoint(0, 0, { x: 0, y: 0 });
-                const p1 = xf.transformPoint(w, 0, { x: 0, y: 0 });
-                const p2 = xf.transformPoint(w, h, { x: 0, y: 0 });
-                const p3 = xf.transformPoint(0, h, { x: 0, y: 0 });
-                ctx.beginPath();
-                ctx.moveTo(p0.x, p0.y);
-                ctx.lineTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.lineTo(p3.x, p3.y);
-                ctx.closePath();
-                ctx.stroke();
+            if (entity.body && typeof entity.body.drawDebug === 'function') {
+                entity.body.drawDebug(ctx, color);
             } else {
-                ctx.strokeRect(box.x + 0.5, box.y + 0.5, box.width, box.height);
+                const xf = entity.transform;
+                if (xf && typeof xf.transformPoint === 'function') {
+                    const w = entity.width || box.width;
+                    const h = entity.height || box.height;
+                    const p0 = xf.transformPoint(0, 0, { x: 0, y: 0 });
+                    const p1 = xf.transformPoint(w, 0, { x: 0, y: 0 });
+                    const p2 = xf.transformPoint(w, h, { x: 0, y: 0 });
+                    const p3 = xf.transformPoint(0, h, { x: 0, y: 0 });
+                    ctx.beginPath();
+                    ctx.moveTo(p0.x, p0.y);
+                    ctx.lineTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.lineTo(p3.x, p3.y);
+                    ctx.closePath();
+                    ctx.stroke();
+                } else {
+                    ctx.strokeRect(box.x + 0.5, box.y + 0.5, box.width, box.height);
+                }
             }
         }
 

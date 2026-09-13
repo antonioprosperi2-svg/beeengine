@@ -80,6 +80,7 @@ export class BeeEntity {
         this.visible = true;
         this.destroyed = false;
         this.collider = null;
+        this.body = null;
     }
 
     #parent = null;
@@ -284,6 +285,9 @@ export class BeeEntity {
 
     integrate(dt) {
         if (!this.active || this.destroyed || dt <= 0) return;
+
+        // Se c'è un BeeRigidBody nel mondo fisico, l'integrazione la fa BeePhysicsWorld.
+        if (this.body && this.body.enabled && this.body.world) return;
 
         if (this.gravity !== 0 && !this.isGrounded) {
             this.vy += this.gravity * dt;

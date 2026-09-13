@@ -1,8 +1,17 @@
 /**
- * Demo Survival / Top-Down Arena — test di caricamento asset + BeePlayer in mode 'free'.
- * Non modifica le classi del motore: usa solo le API pubbliche.
+ * Demo Survival / Top-Down Arena — sprint, fisica AABB, salto Z visivo.
+ * BeePlayer resta intatto: sprint/salto sono wrapper nella demo.
  */
-import { BeeEngine, BeePlayer, BeeCamera, BeeTilemap } from './BeeEngine.js';
+import {
+    BeeEngine,
+    BeePlayer,
+    BeeCamera,
+    BeeTilemap,
+    BeeEntity,
+    BeeRigidBody,
+    BEE_BODY_TYPE,
+    BEE_LAYER
+} from './BeeEngine.js';
 
 const VIEW_W = 800;
 const VIEW_H = 600;
@@ -12,6 +21,10 @@ const MAP_ROWS = 6;
 const MAP_W = MAP_COLS * TILE;
 const MAP_H = MAP_ROWS * TILE;
 const PLAYER_SIZE = 112;
+const WALK_SPEED = 220;
+const SPRINT_MUL = 1.5;
+const JUMP_TIME = 0.45;
+const JUMP_HEIGHT = 56;
 
 const engine = new BeeEngine('gameCanvas', VIEW_W, VIEW_H);
 engine.enableAutoResize(VIEW_W, VIEW_H);
@@ -70,22 +83,98 @@ function stitchPlayerSheet() {
     return canvas;
 }
 
-function makeProp(x, y, width, height, drawFn) {
-    return {
-        x,
-        y,
-        width,
-        height,
-        visible: true,
-        destroyed: false,
-        get worldX() { return this.x; },
-        get worldY() { return this.y; },
-        getWorldAABB() {
-            return { x: this.x, y: this.y, width: this.width, height: this.height };
-        },
-        draw(ctx) {
-            drawFn(ctx, this);
+function makeDecor(x, y, width, height, drawFn) {
+    const entity = new BeeEntity(x, y, width, height);
+    entity.draw = (ctx) => drawFn(ctx, entity);
+    return entity;
+}
+
+function addSolid(x, y, width, height, drawFn, options = {}) {
+    const entity = makeDecor(x, y, width, height, drawFn);
+    entity.tipo = options.tipo || 'alto';
+    const pivotX = width / 2;
+    const pivotY = options.pivotY ?? height * 0.82;
+    entity.transform.setPivot(pivotX, pivotY);
+    entity.x += pivotX;
+    entity.y += pivotY;
+
+    const body = engine.physics.createBody({
+        entity,
+        type: BEE_BODY_TYPE.STATIC,
+        shape: BeeRigidBody.box(options.boxW || width * 0.42, options.boxH || height * 0.22),
+        layer: BEE_LAYER.WORLD,
+        mask: BEE_LAYER.ALL,
+        restitution: 0,
+        friction: 0.95
+    });
+    body.tipo = entity.tipo;
+    entity.body = body;
+    engine.addEntity(entity);
+    return entity;
+}
+
+function isSprintPressed(input) {
+    return input.isPressed('ShiftLeft') || input.isPressed('ShiftRight') || input.isPressed('Shift');
+}
+
+function attachTopDownControls(player) {
+    player.visualZ = 0;
+    player.airborne = false;
+    player.jumpStart = 0;
+    player.sprinting = false;
+
+    const baseUpdate = player.update.bind(player);
+    player.update = function updateTopDown(dt, input, game) {
+        this.sprinting = !!(input && isSprintPressed(input));
+        this.speed = WALK_SPEED * (this.sprinting ? SPRINT_MUL : 1);
+
+        if (input && input.wasPressed('Space') && !this.airborne) {
+            this.airborne = true;
+            this.jumpStart = game.time.elapsed;
         }
+
+        if (this.airborne) {
+            const t = (game.time.elapsed - this.jumpStart) / JUMP_TIME;
+            if (t >= 1) {
+                this.airborne = false;
+                this.visualZ = 0;
+            } else {
+                this.visualZ = 4 * JUMP_HEIGHT * t * (1 - t);
+            }
+        }
+
+        const bodies = game.physics ? game.physics.bodies : [];
+        for (let i = 0; i < bodies.length; i++) {
+            if (bodies[i].tipo === 'basso') {
+                bodies[i].isTrigger = this.airborne === true;
+            }
+        }
+
+        return baseUpdate(dt, input, game);
+    };
+
+    const baseDraw = player.draw.bind(player);
+    player.draw = function drawTopDown(ctx, game) {
+        const z = this.visualZ || 0;
+        if (!this.sprite || z <= 0) {
+            return baseDraw(ctx, game);
+        }
+
+        const gx = this.worldX + this.width * 0.5;
+        const gy = this.worldY + this.height * 0.78;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+        ctx.beginPath();
+        ctx.ellipse(gx, gy, this.width * 0.16, this.height * 0.06, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        if (this.vx < 0) this.sprite.flipX = true;
+        if (this.vx > 0) this.sprite.flipX = false;
+        this.sprite.draw(ctx, this.worldX, this.worldY - z, {
+            width: this.width,
+            height: this.height
+        });
     };
 }
 
@@ -129,15 +218,34 @@ async function boot() {
         }
     });
 
-    const player = new BeePlayer(
-        MAP_W / 2 - PLAYER_SIZE / 2,
-        MAP_H / 2 - PLAYER_SIZE / 2,
-        PLAYER_SIZE,
-        PLAYER_SIZE
-    );
+    const spawnX = MAP_W / 2 - PLAYER_SIZE / 2;
+    const spawnY = MAP_H / 2 - PLAYER_SIZE / 2;
+    const player = new BeePlayer(spawnX, spawnY, PLAYER_SIZE, PLAYER_SIZE);
     player.mode = 'free';
     player.gravity = 0;
+    player.speed = WALK_SPEED;
     player.sprite = sprite;
+    const pivotX = PLAYER_SIZE / 2;
+    const pivotY = PLAYER_SIZE * 0.78;
+    player.transform.setPivot(pivotX, pivotY);
+    player.x = spawnX + pivotX;
+    player.y = spawnY + pivotY;
+
+    const playerBody = engine.physics.createBody({
+        entity: player,
+        type: BEE_BODY_TYPE.DYNAMIC,
+        shape: BeeRigidBody.box(28, 20),
+        layer: BEE_LAYER.PLAYER,
+        mask: BEE_LAYER.ALL,
+        gravityScale: 0,
+        fixedRotation: true,
+        linearDamping: 0,
+        restitution: 0,
+        friction: 0,
+        mass: 1
+    });
+    player.body = playerBody;
+    attachTopDownControls(player);
 
     engine.camera = new BeeCamera(VIEW_W, VIEW_H);
     engine.camera.setBounds(0, 0, MAP_W, MAP_H);
@@ -145,51 +253,65 @@ async function boot() {
 
     const dirt = engine.getAsset('dirt');
     const water = engine.getAsset('water');
-    const props = [
-        makeProp(320, 280, 256, 256, (ctx, p) => { if (dirt) ctx.drawImage(dirt, p.x, p.y, p.width, p.height); }),
-        makeProp(1500, 200, 256, 256, (ctx, p) => { if (water) ctx.drawImage(water, p.x, p.y, p.width, p.height); }),
-        makeProp(380, 300, 192, 192, (ctx, p) => {
-            const img = engine.getAsset('cottage');
-            if (img) ctx.drawImage(img, p.x, p.y, p.width, p.height);
-        }),
-        makeProp(980, 420, 160, 192, (ctx, p) => {
-            const img = engine.getAsset('tree');
-            if (img) ctx.drawImage(img, p.x, p.y, p.width, p.height);
-        }),
-        makeProp(1480, 880, 160, 192, (ctx, p) => {
-            const img = engine.getAsset('tree');
-            if (img) ctx.drawImage(img, p.x, p.y, p.width, p.height);
-        }),
-        makeProp(1240, 640, 160, 192, (ctx, p) => {
-            const img = engine.getAsset('well');
-            if (img) ctx.drawImage(img, p.x, p.y, p.width, p.height);
-        }),
-        makeProp(720, 960, 128, 112, (ctx, p) => {
-            const img = engine.getAsset('boulder');
-            if (img) ctx.drawImage(img, p.x, p.y, p.width, p.height);
-        })
-    ];
+
+    engine.addEntity(ground);
+    engine.addEntity(makeDecor(320, 280, 256, 256, (ctx, p) => {
+        if (dirt) ctx.drawImage(dirt, p.worldX, p.worldY, p.width, p.height);
+    }));
+    engine.addEntity(makeDecor(1500, 200, 256, 256, (ctx, p) => {
+        if (water) ctx.drawImage(water, p.worldX, p.worldY, p.width, p.height);
+    }));
+
+    addSolid(380, 300, 192, 192, (ctx, p) => {
+        const img = engine.getAsset('cottage');
+        if (img) ctx.drawImage(img, p.worldX, p.worldY, p.width, p.height);
+    }, { tipo: 'alto', boxW: 132, boxH: 70, pivotY: 168 });
+
+    addSolid(980, 420, 160, 192, (ctx, p) => {
+        const img = engine.getAsset('tree');
+        if (img) ctx.drawImage(img, p.worldX, p.worldY, p.width, p.height);
+    }, { tipo: 'alto', boxW: 42, boxH: 28, pivotY: 170 });
+
+    addSolid(1480, 880, 160, 192, (ctx, p) => {
+        const img = engine.getAsset('tree');
+        if (img) ctx.drawImage(img, p.worldX, p.worldY, p.width, p.height);
+    }, { tipo: 'alto', boxW: 42, boxH: 28, pivotY: 170 });
+
+    addSolid(1240, 640, 160, 192, (ctx, p) => {
+        const img = engine.getAsset('well');
+        if (img) ctx.drawImage(img, p.worldX, p.worldY, p.width, p.height);
+    }, { tipo: 'alto', boxW: 78, boxH: 48, pivotY: 150 });
+
+    addSolid(MAP_W / 2 + 70, MAP_H / 2 + 50, 128, 112, (ctx, p) => {
+        const img = engine.getAsset('boulder');
+        if (img) ctx.drawImage(img, p.worldX, p.worldY, p.width, p.height);
+    }, { tipo: 'basso', boxW: 78, boxH: 46, pivotY: 88 });
+
+    addSolid(860, 820, 128, 112, (ctx, p) => {
+        const img = engine.getAsset('boulder');
+        if (img) ctx.drawImage(img, p.worldX, p.worldY, p.width, p.height);
+    }, { tipo: 'basso', boxW: 78, boxH: 46, pivotY: 88 });
 
     let fireFrame = 0;
     let fireTimer = 0;
-    const fire = makeProp(MAP_W / 2 + 70, MAP_H / 2 + 36, 72, 72, (ctx, p) => {
+    const fire = makeDecor(MAP_W / 2 + 8, MAP_H / 2 + 70, 72, 72, (ctx, p) => {
         const img = engine.getAsset(`fire_${fireFrame}`);
-        if (img) ctx.drawImage(img, p.x, p.y, p.width, p.height);
+        if (img) ctx.drawImage(img, p.worldX, p.worldY, p.width, p.height);
     });
 
-    engine.addEntity(ground);
-    props.forEach((prop) => engine.addEntity(prop));
     engine.addEntity(fire);
     engine.addEntity(player);
 
     engine.playMusic(engine.getAsset('bgm'), 0.4);
 
     engine.start(
-        (dt) => {
+        (dt, input, time) => {
             engine.camera.follow(player, 0.14);
 
-            player.x = Math.max(0, Math.min(MAP_W - player.width, player.x));
-            player.y = Math.max(0, Math.min(MAP_H - player.height, player.y));
+            const left = player.worldX;
+            const top = player.worldY;
+            player.x += Math.max(0, -left) + Math.min(0, MAP_W - player.width - left);
+            player.y += Math.max(0, -top) + Math.min(0, MAP_H - player.height - top);
 
             const moving = player.vx !== 0 || player.vy !== 0;
             if (moving) {
@@ -198,10 +320,10 @@ async function boot() {
                 if (ay > ax) {
                     sprite.play(player.vy < 0 ? 'north' : 'south');
                 } else {
-                    // BeePlayer specchia da solo con flipX: usiamo i frame est anche verso ovest.
                     sprite.play('east');
                 }
-                sprite.update(dt);
+                const animScale = player.sprinting ? SPRINT_MUL : 1;
+                sprite.update((time ? time.dt : dt) * animScale);
             }
 
             fireTimer += dt;
@@ -214,9 +336,9 @@ async function boot() {
             ctx.save();
             ctx.font = '14px sans-serif';
             ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-            ctx.fillRect(player.worldX - 36, player.worldY - 28, 184, 22);
+            ctx.fillRect(player.worldX - 52, player.worldY - 32, 230, 22);
             ctx.fillStyle = '#fff';
-            ctx.fillText('WASD / frecce  ·  F2 debug', player.worldX - 28, player.worldY - 12);
+            ctx.fillText('WASD  Shift corsa  Space salto  F2', player.worldX - 44, player.worldY - 16);
             ctx.restore();
         }
     );
