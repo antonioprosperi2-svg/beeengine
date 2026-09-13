@@ -1,0 +1,61 @@
+{
+  "name": "beeengine",
+  "version": "2.5.0",
+  "description": "Modular, universal 2D game engine for HTML5 Canvas: physics, scenes, input, touch controls, asset management, tilemaps and collision system.",
+  "type": "module",
+  "main": "./BeeEngine.js",
+  "module": "./BeeEngine.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./BeeEngine.js",
+      "default": "./BeeEngine.js"
+    },
+    "./index.js": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "BeeEngine.js",
+    "index.js",
+    "src",
+    "index.d.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "game-engine",
+    "2d",
+    "canvas",
+    "html5",
+    "platformer",
+    "javascript",
+    "esm",
+    "beeengine",
+    "gamedev"
+  ],
+  "author": "Antonio Prosperi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/antonioprosperi2-svg/PLAYCOMBO.git"
+  },
+  "bugs": {
+    "url": "https://github.com/antonioprosperi2-svg/PLAYCOMBO/issues"
+  },
+  "homepage": "https://github.com/antonioprosperi2-svg/PLAYCOMBO#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "eslint": "^10.8.1",
+    "typescript": "^5.7.0"
+  }
+}
